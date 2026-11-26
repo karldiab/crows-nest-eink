@@ -1,0 +1,8 @@
+node_modules
+dist
+
+# Source photos and anything exported from them
+input_pics/
+*.eggproj
+egg_previews*.zip
+easter_eggs.h

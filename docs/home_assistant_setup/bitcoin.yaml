@@ -1,0 +1,319 @@
+###############################################################################
+# Bitcoin network data + estimated mining earnings
+# Save as: packages/bitcoin.yaml (next to configuration.yaml)
+#
+# Data source: mempool.space public REST API (no key), polled every 5 min
+# through Home Assistant's built-in RESTful integration ("rest:").
+#
+# Requires sensor.miners_total_hash_rate (GH/s) from bitaxe.yaml for the
+# earnings sensors. The network sensors work on their own.
+#
+# Earnings model (expected value, not a guarantee):
+#   blocks/s found  = hash_rate / (difficulty * 2^32)
+#   sats/s          = blocks/s * avg_block_reward_sats * (1 - pool_fee)
+#   using the 144-block average reward (subsidy + fees), so fee swings are
+#   smoothed out. Network pace is already baked into difficulty.
+#
+# Note: device_class monetary only allows state_class "total" (or none), so the
+# USD rate/price sensors carry no state_class and USD earned uses "total".
+#
+# OPTIONAL EXTRAS: the active YAML is what the panel needs (3 requests every
+# 5 min). Blocks marked "OPTIONAL" are extra metrics the panel doesn't read but
+# that make good dashboard material. They sit where they belong, so to enable
+# one just uncomment it in place (remove the leading "# " on each line):
+#   - Network hash rate, avg fees per block, fee share   (no extra requests)
+#   - Block height                                       (+1 request)
+#   - Difficulty epoch: progress, next retarget %, blocks/hours left,
+#     average block time                                 (+1 request)
+#   - Fee rates: fastest and economy sat/vB              (+1 request)
+#   - Accrued earnings: lifetime sats/USD earned, plus daily and monthly
+#     meters (the integrals + totals + utility_meter blocks at the bottom)
+###############################################################################
+
+# -----------------------------------------------------------------------------
+# Pool fee (percent). Adjust from the UI, it survives restarts.
+# 0 = estimate gross. Set to your pool's fee if you mine in a pool.
+# -----------------------------------------------------------------------------
+input_number:
+  mining_pool_fee:
+    name: Mining pool fee
+    icon: mdi:percent
+    min: 0
+    max: 10
+    step: 0.1
+    unit_of_measurement: "%"
+    mode: box
+
+# -----------------------------------------------------------------------------
+# Network data (REST, every 5 minutes)
+# value_json = the parsed JSON response; value = the raw text response.
+# -----------------------------------------------------------------------------
+rest:
+  # Price
+  - resource: https://mempool.space/api/v1/prices
+    scan_interval: 300
+    timeout: 20
+    sensor:
+      - name: "BTC Price USD"
+        unique_id: btc_price_usd
+        value_template: "{{ value_json.USD }}"
+        unit_of_measurement: "USD"
+        device_class: monetary
+        icon: mdi:currency-btc
+
+  # Current difficulty (and network hash rate) from the same request
+  - resource: https://mempool.space/api/v1/mining/hashrate/3d
+    scan_interval: 300
+    timeout: 30
+    sensor:
+      - name: "BTC Difficulty"
+        unique_id: btc_difficulty
+        value_template: "{{ (value_json.currentDifficulty / 1e12) | round(3) }}"
+        unit_of_measurement: "T"
+        state_class: measurement
+        icon: mdi:pickaxe
+
+      # --- OPTIONAL: network hash rate (same request) ---
+      # - name: "BTC Network Hash Rate"
+      #   unique_id: btc_network_hash_rate
+      #   value_template: "{{ (value_json.currentHashrate / 1e18) | round(1) }}"
+      #   unit_of_measurement: "EH/s"
+      #   state_class: measurement
+      #   icon: mdi:server-network
+
+  # Block reward and transaction fees, averaged over the last 144 blocks (~1 day)
+  - resource: https://mempool.space/api/v1/mining/reward-stats/144
+    scan_interval: 300
+    timeout: 20
+    sensor:
+      - name: "BTC Avg Block Reward"
+        unique_id: btc_avg_block_reward
+        value_template: >
+          {% set n = value_json.endBlock - value_json.startBlock + 1 %}
+          {{ (value_json.totalReward | float / n / 1e8) | round(5) }}
+        unit_of_measurement: "BTC"
+        state_class: measurement
+        icon: mdi:cash-multiple
+
+      # --- OPTIONAL: fee stats (same request) ---
+      # - name: "BTC Avg Fees Per Block"
+      #   unique_id: btc_avg_fees_per_block
+      #   value_template: >
+      #     {% set n = value_json.endBlock - value_json.startBlock + 1 %}
+      #     {{ (value_json.totalFee | float / n / 1e8) | round(5) }}
+      #   unit_of_measurement: "BTC"
+      #   state_class: measurement
+      #   icon: mdi:cash-fast
+      #
+      # - name: "BTC Fee Share Of Reward"
+      #   unique_id: btc_fee_share_of_reward
+      #   value_template: >
+      #     {{ (value_json.totalFee | float / value_json.totalReward | float * 100) | round(2) }}
+      #   unit_of_measurement: "%"
+      #   state_class: measurement
+      #   icon: mdi:percent-outline
+
+  # --- OPTIONAL: block height (plain-text integer response, +1 request) ---
+  # - resource: https://mempool.space/api/blocks/tip/height
+  #   scan_interval: 300
+  #   timeout: 20
+  #   sensor:
+  #     - name: "BTC Block Height"
+  #       unique_id: btc_block_height
+  #       value_template: "{{ value | int }}"
+  #       icon: mdi:cube-outline
+
+  # --- OPTIONAL: difficulty epoch and next retarget (+1 request) ---
+  # - resource: https://mempool.space/api/v1/difficulty-adjustment
+  #   scan_interval: 300
+  #   timeout: 20
+  #   sensor:
+  #     - name: "BTC Epoch Progress"
+  #       unique_id: btc_epoch_progress
+  #       value_template: "{{ value_json.progressPercent | round(1) }}"
+  #       unit_of_measurement: "%"
+  #       icon: mdi:progress-clock
+  #     - name: "BTC Difficulty Change Estimate"
+  #       unique_id: btc_difficulty_change_estimate
+  #       value_template: "{{ value_json.difficultyChange | round(2) }}"
+  #       unit_of_measurement: "%"
+  #       icon: mdi:chart-line-variant
+  #     - name: "BTC Blocks To Retarget"
+  #       unique_id: btc_blocks_to_retarget
+  #       value_template: "{{ value_json.remainingBlocks }}"
+  #       unit_of_measurement: "blocks"
+  #       icon: mdi:cube-send
+  #     - name: "BTC Hours To Retarget"
+  #       unique_id: btc_hours_to_retarget
+  #       value_template: "{{ (value_json.remainingTime / 3600000) | round(1) }}"
+  #       unit_of_measurement: "h"
+  #       icon: mdi:timer-sand
+  #     - name: "BTC Average Block Time"
+  #       unique_id: btc_average_block_time
+  #       value_template: "{{ (value_json.timeAvg / 60000) | round(2) }}"
+  #       unit_of_measurement: "min"
+  #       icon: mdi:clock-outline
+
+  # --- OPTIONAL: current fee rates in sat/vB (+1 request) ---
+  # - resource: https://mempool.space/api/v1/fees/recommended
+  #   scan_interval: 300
+  #   timeout: 20
+  #   sensor:
+  #     - name: "BTC Fee Fastest"
+  #       unique_id: btc_fee_fastest
+  #       value_template: "{{ value_json.fastestFee }}"
+  #       unit_of_measurement: "sat/vB"
+  #       state_class: measurement
+  #       icon: mdi:flash
+  #     - name: "BTC Fee Economy"
+  #       unique_id: btc_fee_economy
+  #       value_template: "{{ value_json.economyFee }}"
+  #       unit_of_measurement: "sat/vB"
+  #       state_class: measurement
+  #       icon: mdi:snail
+
+# -----------------------------------------------------------------------------
+# Estimated earnings
+# -----------------------------------------------------------------------------
+template:
+  - sensor:
+      # Hourly rates: inputs for the per-day projections (and the optional
+      # accrual integrals). Exclude both from the recorder.
+      - name: "Mining Sats Per Hour"
+        unique_id: mining_sats_per_hour
+        unit_of_measurement: "sats/h"
+        state_class: measurement
+        icon: mdi:speedometer
+        state: >
+          {% set hs = states('sensor.miners_total_hash_rate') | float(0) * 1e9 %}
+          {% set d = states('sensor.btc_difficulty') | float(0) * 1e12 %}
+          {% set reward = states('sensor.btc_avg_block_reward') | float(0) %}
+          {% set keep = 1 - (states('input_number.mining_pool_fee') | float(0) / 100) %}
+          {% if d > 0 %}
+            {{ (hs * 3600 / (d * 4294967296) * reward * 1e8 * keep) | round(3) }}
+          {% else %}0{% endif %}
+        availability: >
+          {{ has_value('sensor.miners_total_hash_rate')
+             and has_value('sensor.btc_difficulty')
+             and has_value('sensor.btc_avg_block_reward') }}
+
+      - name: "Mining USD Per Hour"
+        unique_id: mining_usd_per_hour
+        unit_of_measurement: "USD"
+        device_class: monetary
+        icon: mdi:cash
+        state: >
+          {{ (states('sensor.mining_sats_per_hour') | float(0) / 1e8
+              * states('sensor.btc_price_usd') | float(0)) | round(6) }}
+        availability: >
+          {{ has_value('sensor.mining_sats_per_hour') and has_value('sensor.btc_price_usd') }}
+
+      # Per-day projections at the current hash rate, difficulty and price
+      - name: "Mining Sats Per Day"
+        unique_id: mining_sats_per_day
+        unit_of_measurement: "sats/day"
+        state_class: measurement
+        icon: mdi:bitcoin
+        state: "{{ (states('sensor.mining_sats_per_hour') | float(0) * 24) | round(0) }}"
+        availability: "{{ has_value('sensor.mining_sats_per_hour') }}"
+
+      - name: "Mining USD Per Day"
+        unique_id: mining_usd_per_day
+        unit_of_measurement: "USD"
+        device_class: monetary
+        icon: mdi:cash
+        state: "{{ (states('sensor.mining_usd_per_hour') | float(0) * 24) | round(3) }}"
+        availability: "{{ has_value('sensor.mining_usd_per_hour') }}"
+
+      # Expected time to find a block at the current hash rate and difficulty:
+      #   seconds = difficulty * 2^32 / hash_rate
+      # This is the solo-mining figure. In a pool, the pool finds blocks and
+      # you are paid by shares, so treat it as a sense-of-scale number.
+      - name: "Mining Years To Find Block"
+        unique_id: mining_years_to_find_block
+        unit_of_measurement: "years"
+        state_class: measurement
+        icon: mdi:dice-multiple
+        state: >
+          {% set hs = states('sensor.miners_total_hash_rate') | float(0) * 1e9 %}
+          {% set d = states('sensor.btc_difficulty') | float(0) * 1e12 %}
+          {% set years = d * 4294967296 / hs / 31557600 %}
+          {{ years | round(0) if years >= 10 else years | round(2) }}
+        availability: >
+          {{ has_value('sensor.miners_total_hash_rate')
+             and states('sensor.miners_total_hash_rate') | float(0) > 0
+             and has_value('sensor.btc_difficulty') }}
+
+      # --- OPTIONAL: accrued lifetime earnings (needs the integrals below) ---
+      # availability stops a restart blip from looking like a meter reset.
+      # - name: "Mining Sats Earned"
+      #   unique_id: mining_sats_earned
+      #   unit_of_measurement: "sats"
+      #   state_class: total_increasing
+      #   icon: mdi:bitcoin
+      #   state: "{{ states('sensor.mining_sats_integral') | float(0) | round(1) }}"
+      #   availability: "{{ has_value('sensor.mining_sats_integral') }}"
+      #
+      # - name: "Mining USD Earned"
+      #   unique_id: mining_usd_earned
+      #   unit_of_measurement: "USD"
+      #   device_class: monetary
+      #   state_class: total
+      #   icon: mdi:cash-multiple
+      #   state: "{{ states('sensor.mining_usd_integral') | float(0) | round(4) }}"
+      #   availability: "{{ has_value('sensor.mining_usd_integral') }}"
+
+# -----------------------------------------------------------------------------
+# OPTIONAL: accrual. Integrates the hourly rates over time (left Riemann sum)
+# into running totals. Uncomment the whole block, including "sensor:".
+# Exclude both integrals from the recorder.
+# -----------------------------------------------------------------------------
+# sensor:
+#   - platform: integration
+#     name: "Mining Sats Integral"
+#     unique_id: mining_sats_integral
+#     source: sensor.mining_sats_per_hour
+#     method: left
+#     unit_time: h
+#     round: 3
+#     max_sub_interval:
+#       minutes: 5
+#
+#   - platform: integration
+#     name: "Mining USD Integral"
+#     unique_id: mining_usd_integral
+#     source: sensor.mining_usd_per_hour
+#     method: left
+#     unit_time: h
+#     round: 6
+#     max_sub_interval:
+#       minutes: 5
+
+# -----------------------------------------------------------------------------
+# OPTIONAL: daily and monthly earnings (needs the accrual blocks above).
+# Uncomment the whole block, including "utility_meter:".
+# -----------------------------------------------------------------------------
+# utility_meter:
+#   mining_sats_daily:
+#     name: "Mining Sats Daily"
+#     unique_id: mining_sats_daily
+#     source: sensor.mining_sats_earned
+#     cycle: daily
+#
+#   mining_sats_monthly:
+#     name: "Mining Sats Monthly"
+#     unique_id: mining_sats_monthly
+#     source: sensor.mining_sats_earned
+#     cycle: monthly
+#
+#   mining_usd_daily:
+#     name: "Mining USD Daily"
+#     unique_id: mining_usd_daily
+#     source: sensor.mining_usd_earned
+#     cycle: daily
+#
+#   mining_usd_monthly:
+#     name: "Mining USD Monthly"
+#     unique_id: mining_usd_monthly
+#     source: sensor.mining_usd_earned
+#     cycle: monthly

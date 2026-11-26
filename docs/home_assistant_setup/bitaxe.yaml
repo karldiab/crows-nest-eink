@@ -1,0 +1,215 @@
+###############################################################################
+# Bitaxe package: clean per-miner sensors, fleet totals, lifetime counters.
+#
+# Per miner: raw sensor -> online gate + range check -> clean sensor -> totals
+#   - Offline miner reads 0 for hash rate and power
+#   - Out-of-range readings are dropped (clean sensor keeps its last value)
+#   - Online = the raw uptime sensor changed within the last 180 s
+#
+# Requires the Bitaxe integration with polling enabled.
+#
+# Save as packages/bitaxe.yaml. Replace every line marked RAW with your own
+# entity IDs. To add miners, see
+# docs/home_assistant_setup/home-assistant-setup.md, section 4.4.
+#
+# OPTIONAL EXTRAS: the active YAML is what the panel needs. Blocks marked
+# "OPTIONAL" are extra metrics the panel doesn't read but that make good
+# dashboard material. They sit where they belong, so to enable one just
+# uncomment it in place (remove the leading "# " on each of its lines):
+#   - Miners Online         count of miners currently hashing
+#   - Daily/monthly meters  hashes (PH) and energy (kWh) today / this month
+###############################################################################
+
+# -----------------------------------------------------------------------------
+# Lifetime counters (Riemann-sum integrals of the clean fleet totals).
+# method: left suits stepwise polled data and drops to 0 without overshoot.
+# Values are restored across restarts independently of the recorder.
+# -----------------------------------------------------------------------------
+sensor:
+  - platform: integration
+    name: "Miners Total Energy"
+    unique_id: miners_total_energy
+    source: sensor.miners_total_power
+    method: left
+    unit_prefix: k
+    unit_time: h
+    round: 3
+    max_sub_interval:
+      minutes: 5
+
+  # Lifetime hashes in GH (GH/s x s). Converted to PH by a template below.
+  - platform: integration
+    name: "Miners Total Hashes GH"
+    unique_id: miners_total_hashes_gh
+    source: sensor.miners_total_hash_rate
+    method: left
+    unit_time: s
+    round: 0
+    max_sub_interval:
+      minutes: 5
+
+template:
+  # ---------------------------------------------------------------------------
+  # Online detection: one per miner
+  # ---------------------------------------------------------------------------
+  - binary_sensor:
+      - name: "Bitaxe Online"
+        unique_id: bitaxe_online
+        device_class: connectivity
+        state: >
+          {% set e = 'sensor.bitaxe_uptime_bitaxe' %}  {# RAW #}
+          {{ has_value(e)
+             and (now() - states[e].last_changed).total_seconds() < 180 }}
+
+  - sensor:
+      # -----------------------------------------------------------------------
+      # Clean per-miner sensors: one pair per miner
+      # Bounds: single-ASIC Bitaxe ~0-3000 GH/s, 0-60 W.
+      #         Multi-ASIC units (e.g. quad-chip boards): raise both.
+      # -----------------------------------------------------------------------
+      - name: "Bitaxe Hash Rate"
+        unique_id: bitaxe_hash_rate_clean
+        unit_of_measurement: "GH/s"
+        state_class: measurement
+        icon: mdi:speedometer
+        state: >
+          {% set v = states('sensor.bitaxe_hash_rate_bitaxe') | float(-1) %}  {# RAW #}
+          {% if not is_state('binary_sensor.bitaxe_online', 'on') %}0
+          {% elif 0 <= v <= 3000 %}{{ v | round(1) }}
+          {% else %}{{ this.state | float(0) }}{% endif %}
+
+      - name: "Bitaxe Power"
+        unique_id: bitaxe_power_clean
+        unit_of_measurement: "W"
+        device_class: power
+        state_class: measurement
+        state: >
+          {% set v = states('sensor.bitaxe_power_consumption_bitaxe') | float(-1) %}  {# RAW #}
+          {% if not is_state('binary_sensor.bitaxe_online', 'on') %}0
+          {% elif 0 <= v <= 60 %}{{ v | round(1) }}
+          {% else %}{{ this.state | float(0) }}{% endif %}
+
+      # -----------------------------------------------------------------------
+      # Fleet totals: add every miner's clean sensor to these lists
+      # -----------------------------------------------------------------------
+      - name: "Miners Total Hash Rate"
+        unique_id: miners_total_hash_rate
+        unit_of_measurement: "GH/s"
+        state_class: measurement
+        icon: mdi:pickaxe
+        state: >
+          {{ [ states('sensor.bitaxe_hash_rate') | float(0)
+             ] | sum | round(1) }}
+
+      - name: "Miners Total Power"
+        unique_id: miners_total_power
+        unit_of_measurement: "W"
+        device_class: power
+        state_class: measurement
+        state: >
+          {{ [ states('sensor.bitaxe_power') | float(0)
+             ] | sum | round(1) }}
+
+      - name: "Miners Hash Rate TH"
+        unique_id: miners_hash_rate_th
+        unit_of_measurement: "TH/s"
+        icon: mdi:pickaxe
+        state: >
+          {{ (states('sensor.miners_total_hash_rate') | float(0) / 1000) | round(2) }}
+        availability: "{{ has_value('sensor.miners_total_hash_rate') }}"
+
+      - name: "Miners Efficiency"
+        unique_id: miners_efficiency
+        unit_of_measurement: "J/TH"
+        state_class: measurement
+        icon: mdi:flash-outline
+        state: >
+          {% set ths = states('sensor.miners_total_hash_rate') | float(0) / 1000 %}
+          {% set w = states('sensor.miners_total_power') | float(0) %}
+          {{ (w / ths) | round(1) if ths > 0.1 else 0 }}
+
+      # --- OPTIONAL: count of miners online (add every miner's binary sensor) ---
+      # - name: "Miners Online"
+      #   unique_id: miners_online_count
+      #   state_class: measurement
+      #   icon: mdi:server-network
+      #   state: >
+      #     {{ [ 'binary_sensor.bitaxe_online'
+      #        ] | select('is_state', 'on') | list | count }}
+
+      # Lifetime hashes in petahashes (1 PH = 1e6 GH).
+      # availability stops a 0 during startup from looking like a counter reset.
+      - name: "Miners Total Hashes"
+        unique_id: miners_total_hashes
+        unit_of_measurement: "PH"
+        state_class: total_increasing
+        icon: mdi:pound
+        state: >
+          {{ (states('sensor.miners_total_hashes_gh') | float(0) / 1e6) | round(3) }}
+        availability: "{{ has_value('sensor.miners_total_hashes_gh') }}"
+
+      # -----------------------------------------------------------------------
+      # Best difficulty: parse each miner's "87.94 G" text, take the fleet max
+      # -----------------------------------------------------------------------
+      - name: "Miners Best Difficulty"
+        unique_id: miners_best_difficulty
+        state_class: measurement
+        icon: mdi:trophy
+        state: >
+          {% set mult = {'K': 1e3, 'M': 1e6, 'G': 1e9, 'T': 1e12, 'P': 1e15, 'E': 1e18} %}
+          {% set ns = namespace(vals=[]) %}
+          {% for e in [
+               'sensor.bitaxe_all_time_best_difficulty_bitaxe'
+             ] %}  {# RAW: add every miner's best-difficulty sensor #}
+            {% set s = states(e) | string | trim %}
+            {% set suf = s[-1:] | upper %}
+            {% if suf in mult %}
+              {% set v = s[:-1] | float(0) * mult[suf] %}
+            {% else %}
+              {% set v = s | float(0) %}
+            {% endif %}
+            {% if 0 < v < 1e21 %}{% set ns.vals = ns.vals + [v] %}{% endif %}
+          {% endfor %}
+          {{ ns.vals | max if ns.vals else this.state }}
+
+      - name: "Miners Best Difficulty Display"
+        unique_id: miners_best_difficulty_display
+        icon: mdi:trophy
+        state: >
+          {% set v = states('sensor.miners_best_difficulty') | float(0) %}
+          {% if v >= 1e18 %}{{ (v / 1e18) | round(2) }} E
+          {% elif v >= 1e15 %}{{ (v / 1e15) | round(2) }} P
+          {% elif v >= 1e12 %}{{ (v / 1e12) | round(2) }} T
+          {% elif v >= 1e9 %}{{ (v / 1e9) | round(2) }} G
+          {% elif v >= 1e6 %}{{ (v / 1e6) | round(2) }} M
+          {% else %}{{ v | round(0) }}{% endif %}
+        availability: "{{ has_value('sensor.miners_best_difficulty') }}"
+
+# -----------------------------------------------------------------------------
+# OPTIONAL: daily and monthly totals (reset at midnight / the 1st).
+# Uncomment the whole block, including the "utility_meter:" line.
+# -----------------------------------------------------------------------------
+# utility_meter:
+#   miners_hashes_daily:
+#     name: "Miners Hashes Daily"
+#     unique_id: miners_hashes_daily
+#     source: sensor.miners_total_hashes
+#     cycle: daily
+#
+#   miners_hashes_monthly:
+#     name: "Miners Hashes Monthly"
+#     unique_id: miners_hashes_monthly
+#     source: sensor.miners_total_hashes
+#     cycle: monthly
+#
+#   miners_energy_daily:
+#     name: "Miners Energy Daily"
+#     unique_id: miners_energy_daily
+#     source: sensor.miners_total_energy
+#     cycle: daily
+#
+#   miners_energy_monthly:
+#     name: "Miners Energy Monthly"
+#     unique_id: miners_energy_monthly
+#     source: sensor.miners_total_energy
+#     cycle: monthly

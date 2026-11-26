@@ -1,0 +1,28 @@
+###############################################################################
+# configuration.yaml additions
+# Merge these into your existing configuration.yaml. Do not paste a second
+# homeassistant: or recorder: key if you already have one, merge into it.
+# See docs/home_assistant_setup/home-assistant-setup.md, sections 0 and 6.
+###############################################################################
+
+homeassistant:
+  packages: !include_dir_named packages
+
+recorder:
+  commit_interval: 30        # batch writes every 30 s instead of every 5 s
+  purge_keep_days: 10
+  exclude:
+    entity_globs:
+      # Raw Bitaxe entities: one line per miner (match your real IDs)
+      - sensor.*_bitaxe
+    entities:
+      # Intermediate sensors that change on every poll
+      - sensor.miners_total_hashes_gh
+      - sensor.mining_sats_per_hour
+      - sensor.mining_usd_per_hour
+      - sensor.mining_sats_integral   # only if accrual is enabled
+      - sensor.mining_usd_integral    # only if accrual is enabled
+  # Optional: keep history for a few raw sensors despite the glob above
+  # include:
+  #   entities:
+  #     - sensor.bitaxe_temperature_asic_bitaxe
