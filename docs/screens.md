@@ -1,8 +1,7 @@
 # The screens
 
 Every page has a black header with the page name, three page dots, and `Updated HH:MM` (when the shown data was
-fetched) or `Offline HH:MM` (Home Assistant can't be reached; the data is from that time). A frame around the page
-means you're in page mode. `--` means a value is missing or unavailable.
+fetched) or `Offline HH:MM` (Home Assistant can't be reached; the data is from that time). `--` means a value is missing or unavailable.
 
 The units shown below are the defaults. The weather unit labels come from `config.h`.
 
@@ -35,7 +34,7 @@ The title is `HOME_TITLE` from `config.h`.
 
 | Element | Meaning |
 |---|---|
-| Rounded box | The selected tile (lights mode) |
+| Rounded box | The selected tile. The rocker moves it and pressing the rocker toggles that tile. |
 | Bulb | Off: gray. Low (under 34% brightness): soft glow. Medium (34 to 66%): brighter glow. High (67% and up): glow with rays. |
 | Bar beside the bulb | Brightness of the lights that are on, averaged. One segment per level in `BRIGHTNESS_LEVELS`, filled from the bottom. |
 | `2 of 4` | Lights on, out of the available lights in that room |

@@ -11,10 +11,10 @@ Back to the [README](../README.md).
 | Some values show `--` | Those entities don't exist, are unavailable or aren't numbers. Paste the boot template into Developer Tools ▸ Template to see which. |
 | A light tile shows `--` | The area ID is wrong, or the area has no available lights. |
 | Light counts look doubled | The area contains a light group as well as its members. |
-| Faint ghost images | Hold MENU for 1 s for a full refresh. Lower `AUTO_FULL_EVERY` if it happens often. |
+| Faint ghost images | Hold the rocker press for 1 s for a full refresh. Lower `AUTO_FULL_EVERY` if it happens often. |
 | No brightness bar on a room | Its lights are off or don't report brightness (on/off-only plugs). |
 | Upload hangs at "Connecting…" | Hold BOOT, tap RESET, release BOOT, then upload. |
-| MENU + EXIT does nothing | Neither `easter_eggs.h` nor `easter_eggs_example.h` is in the sketch folder, or the file has no images. |
+| Holding MENU + EXIT does nothing | Neither `easter_eggs.h` nor `easter_eggs_example.h` is in the sketch folder, or the file has no images. |
 
 For problems on the Home Assistant side (packages not loading, miner or Bitcoin sensors `unavailable`), see the
 [Home Assistant guide's troubleshooting](home_assistant_setup/home-assistant-setup.md#8-troubleshooting).

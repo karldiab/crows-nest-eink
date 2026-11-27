@@ -20,7 +20,7 @@ service calls to act) works for anything Home Assistant controls, such as thermo
 ## Features
 
 - **Light control.** Toggle a room or all lights, step brightness through levels you choose, or hold
-  EXIT to turn everything off. The "All" tile sets every lit light to the same level.
+  EXIT to turn everything off (or back on). The "All" tile sets every lit light to the same level.
 - **Immediate feedback.** The screen updates as soon as you press a button, then corrects itself if
   Home Assistant reports a different state.
 - **Weather.** Temperature, feels-like, humidity, wind speed and direction, rain, UV, and sunrise and
@@ -32,7 +32,8 @@ service calls to act) works for anything Home Assistant controls, such as thermo
 - **Low power.** Light-sleeps between polls, wakes on any button, and stays connected for 20 s after
   a press so follow-up presses are instant.
 - **Reliable input.** Buttons are read on the second core, so presses during a refresh aren't lost.
-- **Easter egg.** Press MENU and EXIT together.
+- **Easter egg.** Hold MENU and EXIT together.
+
 ---
 
 ## The screens
@@ -50,35 +51,29 @@ What does `KYRS/BLOCK` or `J/TH` mean? **[The screens](docs/screens.md)** explai
 
 ## Using the panel
 
-There are two focus modes.
+MENU picks the page. The rocker works the light tiles on the Home page, where a rounded box shows the selected
+tile. On Weather and Mining the rocker does nothing.
 
-**Lights mode** (Home page): a rounded box sits on one light tile.
-
-| Input | Action |
-|---|---|
-| UP / DOWN | Move the box between the light tiles |
-| MENU or rocker press (tap) | Toggle the boxed room |
-| Hold MENU (or rocker press) + UP / DOWN | Next brightness level up / down |
-| EXIT | Switch to page mode |
-
-**Page mode**: a frame around the whole screen.
+**Tap**
 
 | Input | Action |
 |---|---|
-| UP / DOWN | Switch page: Home, Weather, Mining |
-| MENU or rocker press | Go to Home and switch to lights mode |
-| EXIT | Go to Home (stays in page mode) |
+| MENU | Next page: Home, Weather, Mining, then back to Home |
+| EXIT | Go to Home |
+| Rocker up / down | Move the box between the light tiles |
+| Rocker press | Toggle the boxed room |
 
-**Any time**
+**Hold**
 
 | Input | Action |
 |---|---|
-| Hold MENU 1 s | Full refresh (clears ghosting) and fetch fresh data |
-| Hold EXIT 1 s | All lights off |
-| MENU + EXIT together | Easter egg photo (yours from `easter_eggs.h`, or the bundled samples) |
+| Hold MENU + rocker up / down | Next brightness level up / down for the boxed room |
+| Hold rocker press 1 s | Full refresh of the screen (clears ghosting), and fetch fresh data from Home Assistant |
+| Hold EXIT 1 s | All lights off. If every light is already off, all lights back on. |
+| Hold MENU + EXIT 1 s | Easter egg photo (yours from `easter_eggs.h`, or the bundled samples) |
 
-MENU, EXIT and the rocker press act when released, so they can be held for brightness or a long press without
-also triggering a tap.
+MENU, EXIT and the rocker press act when released, so holding them doesn't also trigger a tap. Holding MENU for
+a second without using the rocker cancels the page change.
 
 The top-right corner shows when the displayed data was fetched (`Updated 14:32`). It switches to `Offline`
 after two failed polls.
@@ -87,9 +82,9 @@ after two failed polls.
 
 ## The Easter egg
 
-Press **MENU + EXIT** together and the panel shows a random photo of your choosing. It stays for a
-minute, any button brings the dashboard back, and MENU + EXIT again shuffles to another (never the same one twice
-in a row).
+Hold **MENU + EXIT** together for a second and the panel shows a random photo of your choosing. It stays for a
+minute, any button brings the dashboard back, and holding MENU + EXIT again shuffles to another (never the same one
+twice in a row).
 
 Photos are made with **[Image2Eink](Image2Eink/README.md)**, a browser tool in this repo: drop in pictures, crop
 them, pick a dithering style, and export straight into the sketch folder. Nothing leaves your computer. A few sample
@@ -111,11 +106,11 @@ photos ship with the repo, so the egg works straight after cloning.
 
 | Button | GPIO | Role |
 |---|---|---|
-| MENU | 2 | Act / toggle. Hold for a full refresh. |
-| EXIT | 1 | Back / page mode. Hold for all lights off. |
-| Rocker up | 6 | Previous tile or page, or brighter |
-| Rocker down | 4 | Next tile or page, or dimmer |
-| Rocker press | 5 | Same as MENU |
+| MENU | 2 | Next page. Hold with the rocker for brightness. |
+| EXIT | 1 | Go to Home. Hold for all lights off (or on). |
+| Rocker up | 6 | Previous tile, or brighter with MENU held |
+| Rocker down | 4 | Next tile, or dimmer with MENU held |
+| Rocker press | 5 | Toggle the selected tile. Hold for a full refresh. |
 
 GPIO 7 enables panel power and is driven high at boot. GPIO 41 drives the power LED, set by `POWER_LED_MODE`.
 

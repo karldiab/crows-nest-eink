@@ -82,7 +82,7 @@
   { "All",     nullptr }
 
 // ---------- Brightness levels ----------
-// Percent levels that hold MENU + UP/DOWN steps through, lowest first (1 to 8).
+// Percent levels that hold MENU + rocker up/down steps through, lowest first (1 to 8).
 // The bar next to each bulb has one segment per level. Most bulbs look
 // brighter than their percentage at the low end, so uneven steps such as
 // 10, 20, 40, 60, 100 often look more even than 20, 40, 60, 80, 100.

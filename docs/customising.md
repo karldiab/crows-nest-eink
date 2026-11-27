@@ -12,8 +12,8 @@ Most behaviour is set by constants at the top of the sketch:
 | `QUIET_START_HOUR` / `QUIET_END_HOUR` | 23 / 6 | No number-only refreshes in this window (set equal to disable) |
 | `AWAKE_AFTER_INPUT_MS` | 20 s | Stay awake with WiFi up after a press |
 | `AUTO_FULL_EVERY` | 20 | Partial refreshes between full refreshes |
-| `LONG_PRESS_MS` | 1 s | Hold time for MENU / EXIT long presses |
-| `BRIGHTNESS_LEVELS` (in `config.h`) | 20, 40, 60, 80, 100 | Levels UP/DOWN step through |
+| `LONG_PRESS_MS` | 1 s | Hold time for long presses (EXIT, rocker press, MENU + EXIT) |
+| `BRIGHTNESS_LEVELS` (in `config.h`) | 20, 40, 60, 80, 100 | Levels that hold MENU + rocker up/down step through |
 | `EGG_SHOW_MS` | 60 s | How long an Easter egg photo stays up |
 | `POWER_LED_MODE` (in `config.h`) | 2 | Power LED: 1 always on, 2 lit during any refresh, 3 lit during full refreshes, 4 always off |
 

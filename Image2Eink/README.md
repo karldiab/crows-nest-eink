@@ -2,7 +2,7 @@
 
 Local, browser-only tool for cropping and converting images for 1-bit e-ink panels. Exports
 `easter_eggs.h`, which the parent sketch, Crow's Nest (`crows-nest-eink.ino`), shows as an Easter egg
-when MENU and EXIT are pressed together.
+when MENU and EXIT are held together for a second.
 
 **Output panel** (top bar, saved with the project):
 

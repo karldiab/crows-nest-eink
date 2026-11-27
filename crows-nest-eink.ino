@@ -19,26 +19,23 @@
 //   WEATHER  rain, wind, pressure, UV, sun times
 //   MINING   totals, per-miner table, daily/lifetime stats
 //
-// ---------------- Two focus modes ----------------
-//   LIGHTS mode (Home only): a box sits on one light tile.
+// ---------------- Buttons ----------------
+//   MENU           next page (Home, Weather, Mining, then Home again). Fires
+//                  on release; held 1 s without the rocker it does nothing.
+//   EXIT           go to Home
+//   Rocker (Home only; does nothing on other pages):
 //     UP / DOWN    move the box between the light tiles (LIGHT_ROOMS)
-//     MENU or OK   toggle the boxed room (fires on release)
-//     hold MENU or OK + UP / DOWN   brighter / dimmer through BRIGHTNESS_LEVELS
+//     press (OK)   toggle the boxed room (fires on release)
+//   hold MENU + UP / DOWN   brighter / dimmer through BRIGHTNESS_LEVELS
 //                  (config.h). Only lights already on change; stepping up a
 //                  dark room turns it on at the lowest level, stepping below
 //                  the lowest turns it off. On an "All" tile every lit light is
 //                  set to the same level. The bar right of each bulb shows it.
-//     EXIT         switch to PAGES mode
-//   PAGES mode: a frame around the whole screen.
-//     UP / DOWN    switch page (Home / Weather / Mining)
-//     MENU or OK   go to Home in LIGHTS mode
-//     EXIT         go to Home (stays in PAGES mode)
-//   Any mode:
-//     hold MENU 1 s   full refresh (clears ghosting) + fresh data
-//     hold EXIT 1 s   all lights off ("goodnight")
-//     MENU + EXIT together   Easter egg: a random photo from easter_eggs.h
-//                            for EGG_SHOW_MS. Any button returns early;
-//                            MENU + EXIT again shows another photo.
+//   hold OK 1 s     full refresh (clears ghosting) + fresh data
+//   hold EXIT 1 s   all lights off ("goodnight"), or all on if all are off
+//   hold MENU + EXIT 1 s   Easter egg: a random photo from easter_eggs.h
+//                          for EGG_SHOW_MS. Any button returns early;
+//                          holding MENU + EXIT again shows another photo.
 //
 // ---------------- Easter eggs ----------------
 //   easter_eggs.h is written by the Image2Eink tool (Image2Eink/README.md),
@@ -172,8 +169,8 @@ const int   BTN_PINS[NUM_BTNS]  = { MENU_KEY, EXIT_KEY, UP_KEY, DOWN_KEY, OK_KEY
 const char* BTN_NAMES[NUM_BTNS] = { "MENU", "EXIT", "UP", "DOWN", "OK" };
 // Act on release (so they can be held as a modifier or for a long press)
 const bool  BTN_ON_RELEASE[NUM_BTNS] = { true, true, false, false, true };
-// Have a long-press action
-const bool  BTN_HAS_LONG[NUM_BTNS]   = { true, true, false, false, false };
+// Have a long-press action (MENU's does nothing: a long hold cancels the tap)
+const bool  BTN_HAS_LONG[NUM_BTNS]   = { true, true, false, false, true };
 
 // EPD control pins (from EPD_SPI.h), held during light sleep
 const int EPD_OUT_PINS[] = { SCK, MOSI, RES, DC, CS, PIN_PWR_LED, PIN_EPD_PWR };
@@ -426,7 +423,6 @@ HAData   data;
 Override overrides[NUM_ROOMS];
 
 Page page = PAGE_HOME;
-bool focusLights = true;          // true: box on a light tile. false: page mode
 int  cursorRoom = 0;
 
 const int ACTION_QUEUE_LEN = 8;
@@ -469,7 +465,9 @@ volatile bool btnRawDown[NUM_BTNS];   // debounced pin state, written by the tas
 bool     btnHeld[NUM_BTNS], btnLongFired[NUM_BTNS];
 uint32_t btnDownAt[NUM_BTNS];
 bool     btnUsedAsMod[NUM_BTNS];  // held while UP/DOWN changed brightness
-bool     comboFired = false;      // MENU + EXIT handled for this hold
+bool     comboFired = false;      // MENU + EXIT both down this hold (taps suppressed)
+bool     comboShown = false;      // ...and held long enough to show the egg
+uint32_t comboStartAt = 0;        // when the second of the two went down
 
 // Easter egg
 bool     eggActive = false;
@@ -731,7 +729,8 @@ static bool inQuietHours()
   return data.hour >= QUIET_START_HOUR || data.hour < QUIET_END_HOUR;
 }
 
-static inline bool lightsFocused() { return page == PAGE_HOME && focusLights; }
+// Home is the only page with light tiles for the rocker to act on
+static inline bool lightsFocused() { return page == PAGE_HOME; }
 
 // A tile with no area covers every light in the house
 static inline bool isAllRoom(int i) { return ROOMS[i].area == nullptr; }
@@ -885,13 +884,6 @@ static void drawHeader(bool withStamp)
     gTextR(timeX - 6, 10, offline ? "Offline" : "Updated", 12, WHITE);
     if (withStamp) gText(timeX, 10, data.ts, 12, WHITE);
   }
-}
-
-// Frame around the body = page mode (UP/DOWN switch pages)
-static void drawPageModeFrame()
-{
-  if (lightsFocused()) return;
-  gRect(0, HEADER_H, EPD_W, EPD_H - HEADER_H, 3, BLACK);
 }
 
 static void drawNoData()
@@ -1251,13 +1243,12 @@ static void renderFrame(bool withStamp)
     case PAGE_MINING:  renderMining();  break;
     default: break;
   }
-  drawPageModeFrame();
 }
 
 // Things whose change should hit the panel right away
 static void buildSigKey(char* out, size_t n)
 {
-  int len = snprintf(out, n, "%d|%d|%d|%d|%d|%s|", (int)page, focusLights, cursorRoom, offline,
+  int len = snprintf(out, n, "%d|%d|%d|%d|%s|", (int)page, cursorRoom, offline,
                      data.valid, data.valid ? data.cond : statusMsg);
   for (int i = 0; i < NUM_ROOMS && len < (int)n; i++)
   {
@@ -1711,13 +1702,22 @@ static void stepBrightness(int i, int dir)
   dlog("Brightness %s %s: %.0f%% -> %d%%", ROOMS[i].name, dir > 0 ? "up" : "down", cur, lvl);
 }
 
-static void allLightsOff()
+// Hold EXIT: all lights off, or all back on (at their last brightness) when
+// every tile is known to be off. With no data yet it always turns them off.
+static void allLightsOffOrOn()
 {
-  for (int k = 0; k < NUM_ROOMS; k++) setOverride(k, false);
+  bool anyOn = false, anyKnown = false;
+  for (int k = 0; k < NUM_ROOMS; k++)
+  {
+    Room r = shownRoom(k);
+    if (r.valid) { anyKnown = true; anyOn |= r.on; }
+  }
+  bool on = anyKnown && !anyOn;
+  for (int k = 0; k < NUM_ROOMS; k++) setOverride(k, on);
   JSONVar req;
   req["entity_id"] = "all";
-  enqueueAction("light", "turn_off", JSON.stringify(req));
-  dlog("All lights off");
+  enqueueAction("light", on ? "turn_on" : "turn_off", JSON.stringify(req));
+  dlog("All lights %s", on ? "on" : "off");
 }
 
 // Sends one queued action. Returns true if one was sent.
@@ -1846,13 +1846,6 @@ static bool eggSwallowsButton()
   return true;
 }
 
-// MENU / OK: toggle in lights mode, otherwise go to Home lights mode
-static void actOrEnterLights()
-{
-  if (lightsFocused()) toggleRoom(cursorRoom);
-  else { page = PAGE_HOME; focusLights = true; }
-}
-
 static void onShort(int b)
 {
   dlog("BUTTON: %s", BTN_NAMES[b]);
@@ -1860,30 +1853,31 @@ static void onShort(int b)
   switch (b)
   {
     case B_MENU:
+      page = (Page)((page + 1) % NUM_PAGES);
+      break;
+
     case B_OK:
-      actOrEnterLights();
+      if (lightsFocused()) toggleRoom(cursorRoom);
       break;
 
     case B_UP:
     case B_DOWN:
     {
+      if (!lightsFocused()) break;
       int d = (b == B_DOWN) ? 1 : -1;
-      if (lightsFocused() && (btnHeld[B_MENU] || btnHeld[B_OK]))
+      if (btnHeld[B_MENU])
       {
-        // MENU / OK held: brightness instead of moving the box
-        if (btnHeld[B_MENU]) btnUsedAsMod[B_MENU] = true;
-        if (btnHeld[B_OK])   btnUsedAsMod[B_OK] = true;
+        // MENU held: brightness instead of moving the box
+        btnUsedAsMod[B_MENU] = true;
         stepBrightness(cursorRoom, b == B_UP ? 1 : -1);
         break;
       }
-      if (lightsFocused()) cursorRoom = (cursorRoom + d + NUM_ROOMS) % NUM_ROOMS;
-      else page = (Page)((page + d + NUM_PAGES) % NUM_PAGES);
+      cursorRoom = (cursorRoom + d + NUM_ROOMS) % NUM_ROOMS;
       break;
     }
 
     case B_EXIT:
-      if (lightsFocused()) focusLights = false;   // whole screen highlighted
-      else page = PAGE_HOME;
+      page = PAGE_HOME;
       break;
   }
   noteInput();
@@ -1893,7 +1887,7 @@ static void onLong(int b)
 {
   dlog("BUTTON: %s (long)", BTN_NAMES[b]);
   if (eggSwallowsButton()) return;
-  if (b == B_MENU)
+  if (b == B_OK)
   {
     forceFull = true;
     nextPollAt = millis();      // grab fresh data too
@@ -1901,8 +1895,9 @@ static void onLong(int b)
   else if (b == B_EXIT)
   {
     page = PAGE_HOME;
-    allLightsOff();
+    allLightsOffOrOn();
   }
+  // B_MENU: nothing. Holding it 1 s just cancels the page change.
   noteInput();
 }
 
@@ -1916,14 +1911,14 @@ static void processButtonEvent(const BtnEvent& e)
     if (BTN_ON_RELEASE[i]) { btnLongFired[i] = false; btnUsedAsMod[i] = false; btnDownAt[i] = e.t; }
     else onShort(i);
 
-    // MENU + EXIT together = Easter egg (or the next photo while one is up).
-    // Both act on release, so neither has fired anything yet.
+    // MENU + EXIT held together for LONG_PRESS_MS = Easter egg (or the next
+    // photo while one is up); handleButtons() times it. Both act on release,
+    // so neither has fired anything yet, and neither will now.
     if (btnHeld[B_MENU] && btnHeld[B_EXIT] && !comboFired)
     {
       comboFired = true;
+      comboStartAt = e.t;
       btnLongFired[B_MENU] = btnLongFired[B_EXIT] = true;   // no short/long on release
-      dlog("BUTTON: MENU + EXIT");
-      showRandomEgg();
     }
     return;
   }
@@ -1937,7 +1932,7 @@ static void processButtonEvent(const BtnEvent& e)
     if (BTN_HAS_LONG[i] && e.t - btnDownAt[i] >= LONG_PRESS_MS) { btnLongFired[i] = true; onLong(i); }
     else onShort(i);
   }
-  if (!btnHeld[B_MENU] && !btnHeld[B_EXIT]) comboFired = false;
+  if (!btnHeld[B_MENU] && !btnHeld[B_EXIT]) comboFired = comboShown = false;
 }
 
 static void handleButtons()
@@ -1947,6 +1942,12 @@ static void handleButtons()
 
   // Long presses fire while still held
   uint32_t now = millis();
+  if (comboFired && !comboShown && btnHeld[B_MENU] && btnHeld[B_EXIT] && now - comboStartAt >= LONG_PRESS_MS)
+  {
+    comboShown = true;
+    dlog("BUTTON: MENU + EXIT (held)");
+    showRandomEgg();
+  }
   for (int i = 0; i < NUM_BTNS; i++)
   {
     if (BTN_HAS_LONG[i] && btnHeld[i] && !btnLongFired[i] && !btnUsedAsMod[i] && now - btnDownAt[i] >= LONG_PRESS_MS)
