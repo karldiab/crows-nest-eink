@@ -26,18 +26,29 @@ crows-nest-eink/
 
 Install the **ESP32 board package** (Espressif). Development used core 3.x; Elecrow's tutorial specifies 2.0.14.
 
-| Setting | Value |
+Select **Tools ▸ Board ▸ ESP32S3 Dev Module**, then use these board options, which are known to work:
+
+| Tools menu option | Value |
 |---|---|
-| Board | ESP32S3 Dev Module |
 | **USB CDC On Boot** | **Disabled** (otherwise the serial monitor stays silent) |
-| CPU Frequency | 240 MHz (WiFi) |
-| Flash Mode | QIO 80 MHz |
-| Flash Size | 8 MB (64 Mb) |
-| Partition Scheme | Huge APP (3 MB No OTA / 1 MB SPIFFS) |
+| CPU Frequency | 240MHz (WiFi) |
+| Core Debug Level | None |
+| USB DFU On Boot | Disabled |
+| Erase All Flash Before Sketch Upload | Disabled |
+| Events Run On | Core 1 |
+| Flash Mode | QIO 80MHz |
+| Flash Size | 8MB (64Mb) |
+| JTAG Adapter | Disabled |
+| Arduino Runs On | Core 1 |
+| USB Firmware MSC On Boot | Disabled |
+| Partition Scheme | Huge APP (3MB No OTA/1MB SPIFFS) |
 | PSRAM | OPI PSRAM |
 | Upload Mode | UART0 / Hardware CDC |
 | Upload Speed | 921600 |
-| Serial monitor | 115200 baud |
+| USB Mode | Hardware CDC and JTAG |
+| Zigbee Mode | Disabled |
+
+Set the serial monitor to **115200 baud**.
 
 **Libraries:** only **Arduino_JSON** (by Arduino, 0.2.x) from the Library Manager. WiFi and HTTPClient come with
 the ESP32 core. The Elecrow driver and fonts are already in the sketch folder.
